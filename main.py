@@ -1,12 +1,21 @@
 from pygame import *
 from random import *
+import numpy
+import sounddevice as sd
 init()
 
 
-window = display.set_mode((1200,800))
+window_size = 1200, 800
 display.set_caption("Flapy")
 running = True
+lose = False
 FPS = 120
+
+sr = 16000
+block = 256
+mic_level = 0.0
+
+window = display.set_mode(window_size)
 clock = time.Clock()
 
 class bird():
@@ -16,6 +25,8 @@ class bird():
         self.img = img
         if self.img:
             self.rect = self.img.get_rect()
+            self.rect.x = self.x
+            self.rect.y = self.y
         else:
             self.rect = Rect(x,y,100,100)
 
@@ -30,7 +41,6 @@ class bird():
             screen.blit(self.img, (self.rect.x,self.rect.y,))
         else:
             draw.rect(screen,(255,255,0),self.rect)
-
 class tube:
     def __init__(self,x,y,width=120,height = 800, img = None):
         self.x = x
@@ -62,20 +72,71 @@ def generate_tubes(count):
         
         xcor +=400
     return tubes
+def audio_cb(indata,frames,time,status):
+    global mic_level
+    if status:
+        return
+    rms = float(numpy.sqrt(numpy.mean(indata**2)))
+    mic_level = 0.85 * mic_level + 0.15 * rms
+
+birdimg =  image.load("bird.png")
 tubes= generate_tubes(150)
-player = bird(100,100)
-while running:
-    for e in event.get():
-        if e.type == QUIT:
-            running = False
-    window.fill("skyblue")
+player = bird(100,450-100,birdimg)
+
+y_vel = 0.0
+gravity = 0.6
+THRESH = 0.001
+IMPULSE = -8.0
+
+with sd.InputStream(samplerate=sr, channels=1, blocksize=block, callback=audio_cb):
+    while running:
+        for e in event.get():
+            if e.type == QUIT:
+                running = False
+        window.fill("skyblue")
     
-    player.move()
-    player.update(window)
+        player.move()
+        player.update(window)
     
-    for t in tubes:
-        t.update(window)
-        t.move()
-    
-    display.update()
-    clock.tick(FPS)
+        if mic_level > THRESH:
+            y_vel = IMPULSE
+        y_vel += gravity
+        player.rect.y += int(y_vel)
+        for t in tubes:
+            if not lose:
+                t.move()
+            t.update(window)
+            
+            if t.rect.right < 0:
+                tubes.remove(t)
+            if player.rect.colliderect(t.rect):
+                lose = True
+            if len(tubes) < 8:
+                tubes += generate_tubes(150)
+        
+        keys = key.get_pressed()
+        if keys[K_r] and lose:
+            lose = False
+            score = 0
+            tubes = generate_tubes(150)
+            player.rect.y = window_size[1] //2 - 100
+            y_vel = 0
+
+        if player.rect.bottom > window_size[1]:
+            player.rect.bottom = window_size[1]
+            y_vel = 0.0
+
+        if player.rect.top < 0:
+            player.rect.top = 0
+            if y_vel < 0:
+                y_vel = 0.0
+        
+        if lose and wait > 1:
+            for t in tubes:
+                t.rect.x += 10
+            wait -= 1
+        else:
+            lose = False
+            wait = 40
+        display.update()
+        clock.tick(FPS)
