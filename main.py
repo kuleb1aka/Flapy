@@ -86,7 +86,7 @@ player = bird(100,450-100,birdimg)
 y_vel = 0.0
 gravity = 0.6
 THRESH = 0.001
-IMPULSE = -8.0
+IMPULSE = -8.0 
 
 with sd.InputStream(samplerate=sr, channels=1, blocksize=block, callback=audio_cb):
     while running:
